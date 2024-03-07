@@ -17,6 +17,7 @@ mm-inactive-users_*
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+.vscode/
 
 # Go workspace file
 go.work
