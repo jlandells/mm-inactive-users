@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,9 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buger/jsonparser"
+	"golang.org/x/term"
 )
 
 var debugMode bool = false
@@ -44,10 +49,11 @@ const (
 )
 
 const (
-	defaultPort   = "8065"
-	defaultScheme = "http"
-	defaultAge    = 180
-	pageSize      = 2 // TODO Set this back to the default of 60 after testing!
+	defaultPort           = "8065"
+	defaultScheme         = "http"
+	defaultAge            = 180
+	pageSize              = 60
+	defaultTerminalHeight = 24
 )
 
 // Logging functions
@@ -80,12 +86,48 @@ func getEnvWithDefault(key string, defaultValue interface{}) interface{} {
 	return value
 }
 
+func getTerminalHeight() int {
+	fd := int(os.Stdout.Fd())
+	if term.IsTerminal(fd) {
+		_, height, err := term.GetSize(fd)
+		if err == nil {
+			return height
+		}
+	}
+	return defaultTerminalHeight
+}
+
+func promptForKeypress(prompt string, allowedKeys []string) (string, error) {
+
+	DebugPrint("Waiting for keypress")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		fmt.Print(prompt)
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+
+		input = strings.TrimSpace(strings.ToUpper(input)) // Normalise the input
+
+		for _, key := range allowedKeys {
+			if input == strings.ToUpper(key) {
+				return input, nil // Return the valid keypress
+			}
+		}
+
+		fmt.Println("Invalid input.  Please try again.")
+	}
+}
+
 func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 	DebugPrint("Retrieving Team ID for team: " + mmTeam)
 
 	teamID := ""
 
-	url := fmt.Sprintf("%s://%s:%s/api/v4/teams?name=%s", mattermostCon.mmScheme, mattermostCon.mmURL, mattermostCon.mmPort, url.QueryEscape(mmTeam))
+	url := fmt.Sprintf("%s://%s:%s/api/v4/teams/name/%s", mattermostCon.mmScheme, mattermostCon.mmURL, mattermostCon.mmPort, url.QueryEscape(mmTeam))
 	DebugPrint("Teams lookup URL: " + url)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -110,21 +152,21 @@ func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 		return "", err
 	}
 
-	// Parse the response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		LogMessage(errorLevel, "Failed to convert body data")
-		return "", err
-	}
+	/* 	// Parse the response
+	   	var result map[string]interface{}
+	   	if err := json.Unmarshal(body, &result); err != nil {
+	   		LogMessage(errorLevel, "Failed to convert body data")
+	   		return "", err
+	   	}
 
-	// Convert the data to a string
-	mmTeamData, err := json.Marshal(result)
-	if err != nil {
-		LogMessage(errorLevel, "Unable to convert user data to string")
-		log.Fatal(err)
-	}
+	   	// Convert the data to a string
+	   	mmTeamData, err := json.Marshal(result)
+	   	if err != nil {
+	   		LogMessage(errorLevel, "Unable to convert user data to string")
+	   		log.Fatal(err)
+	   	} */
 
-	teamID, err = jsonparser.GetString([]byte(mmTeamData), "id")
+	teamID, err = jsonparser.GetString([]byte(body), "id")
 	if err != nil {
 		LogMessage(errorLevel, "Unable to retrieve team ID for team: "+mmTeam+" Error: "+err.Error())
 		return "", err
@@ -135,20 +177,20 @@ func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 
 // EpochToDate converts an Epoch time to a string representation of the date.
 func EpochToDate(epoch int64) string {
-	t := time.Unix(epoch, 0)      // Convert Epoch to *time.Time
+	t := time.Unix(epoch/1000, 0) // Convert Epoch to *time.Time
 	return t.Format("02-01-2006") // Return date in DD-MM-YYYY format
 }
 
 // DaysAgo calculates how many days ago a date, represented by Epoch time, was.
 func DaysAgo(epoch int64) int {
 	now := time.Now()
-	then := time.Unix(epoch, 0)
+	then := time.Unix(epoch/1000, 0)
 	daysAgo := now.Sub(then).Hours() / 24 // Calculate difference in hours and convert to days
 	return int(daysAgo)
 }
 
 func callGetUsers(mattermostCon mmConnection, mmTeamID string, page int, usersMap map[string]User, age int) (bool, error) {
-	DebugPrint("Getting users page: " + string(page))
+	DebugPrint("Getting users page: " + strconv.Itoa(page))
 
 	// Construct the URL
 	url := fmt.Sprintf("%s://%s:%s/api/v4/users?in_team=%s&sort=last_activity_at&per_page=%d&page=%d",
@@ -211,6 +253,81 @@ func callGetUsers(mattermostCon mmConnection, mmTeamID string, page int, usersMa
 	return true, nil
 }
 
+func printAllIdentifiedUsers(Users map[string]User) {
+
+	reader := bufio.NewReader(os.Stdin)
+	pageSize := getTerminalHeight() - 1 // We're subtracting 1 to allow for the prompt line
+	count := 2                          // Note that count starts at 2 to allow for the header lines
+
+	fmt.Printf("\nIdentified Users\n================\n\n")
+	for _, user := range Users {
+		fmt.Printf("Username: %s, Email: %s, Full name: %s, Last Login: %s, Days Since Last Login: %d\n",
+			user.Username, user.Email, user.FullName,
+			user.LastActivityOn, user.DaysSinceLastActivity)
+
+		count++
+
+		if count%pageSize == 0 {
+			fmt.Printf("Enter 'Q' to quit, or 'enter' key to continue...")
+			input, _ := reader.ReadString('\n')
+			input = strings.ToUpper(input)
+			if input == "Q\n" || input == "Q\r\n" { // We're handling this for Linux/Mac and Windows alternatives
+				break
+			}
+		}
+	}
+	fmt.Printf("\nTotal users identified: %d\n\n", len(Users))
+}
+
+func deactivateUsers(mmCon mmConnection, users map[string]User) error {
+	DebugPrint("Deactivating users")
+
+	// We'll be passing the same JSON body to every call
+	data := map[string]bool{"active": false}
+
+	// Marshal the data into a JSON byte slice
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		LogMessage(errorLevel, "Error marshaling JSON data for deactivation. Error: "+err.Error())
+		return err
+	}
+
+	for _, user := range users {
+		url := fmt.Sprintf("%s://%s:%s/api/v4/users/%s/active", mmCon.mmScheme, mmCon.mmURL, mmCon.mmPort, user.UserID)
+		req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			LogMessage(warningLevel, "Error preparing API call for user: "+user.Username)
+			continue
+		}
+
+		// Set request headers
+		req.Header.Add("Authorization", "Bearer "+mmCon.mmToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			LogMessage(warningLevel, "PUT request failed for user: "+user.Username)
+			continue
+		}
+		defer resp.Body.Close()
+
+		/* 		body, err := ioutil.ReadAll(resp.Body)
+		   		if err != nil {
+		   			LogMessage(warningLevel, "Failed to process HTTP response for user: "+user.Username)
+		   			continue
+		   		}
+		*/
+		if resp.StatusCode != 200 {
+			LogMessage(warningLevel, "REST call returned: '"+resp.Status+"' when attempting to deactivate user: "+user.Username)
+			continue
+		}
+	}
+
+	LogMessage(infoLevel, "Deactivations complete")
+
+	return nil
+}
+
 func processUsers(mattermostCon mmConnection, mmTeam string, age int, dryrun bool) error {
 
 	DebugPrint("Processing users")
@@ -240,11 +357,48 @@ func processUsers(mattermostCon mmConnection, mmTeam string, age int, dryrun boo
 			break
 		}
 
-		DebugPrint("Processed page: " + string(currentPage))
+		DebugPrint("Processed page: " + strconv.Itoa(currentPage))
 		currentPage++
 	}
 
 	LogMessage(infoLevel, "All users reviewed")
+	if len(candidateUsersMap) == 0 {
+		LogMessage(infoLevel, "No users found that have been inactive for more than "+strconv.Itoa(age)+" days")
+		return nil
+	}
+
+	if dryrun {
+		LogMessage(infoLevel, "Running in dry-run mode.  Writing list of identified users to the terminal.")
+
+		printAllIdentifiedUsers(candidateUsersMap)
+	} else {
+		prompt := fmt.Sprintf("%d users identified as inactive.  Deactivate them? (Y)es/(N)o/(L)ist: ", len(candidateUsersMap))
+		allowedKeys := []string{"Y", "N", "L"}
+
+	loop:
+		for {
+			keypress, err := promptForKeypress(prompt, allowedKeys)
+			if err != nil {
+				LogMessage(errorLevel, "Error processing user input.  Aborting.")
+				os.Exit(4)
+			}
+
+			switch keypress {
+			case "Y":
+				LogMessage(infoLevel, "Deactivating users")
+				deactivateUsers(mattermostCon, candidateUsersMap)
+				break loop
+
+			case "N":
+				LogMessage(infoLevel, "Aborting")
+
+				break loop
+
+			case "L":
+				printAllIdentifiedUsers(candidateUsersMap)
+			}
+		}
+	}
 
 	return nil
 }
