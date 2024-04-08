@@ -25,7 +25,7 @@ Download the latest release from the GitHub releases page. No Go development env
 Here's how to use the Mattermost Inactive User Cleaner:
 
 ```bash
-./mm-inactive-cleaner -url your_mattermost_url -port your_port -scheme http/https -token your_personal_access_token -age days_of_inactivity -dry-run
+./mm-inactive-cleaner -url your_mattermost_url -port your_port -scheme http/https -token your_personal_access_token -team team_name -age days_of_inactivity -dry-run
 ```
 
 ### Parameters
@@ -36,6 +36,7 @@ Here's how to use the Mattermost Inactive User Cleaner:
 | `-port` | `MM_PORT` | The Mattermost port to be used [default: 8065] |
 | `-scheme` | `MM_SCHEME` | The HHTP scheme to be used (http/https) [default: http] |
 | `-token` | `MM_TOKEN` | The user token for Mattermost.  Note that this user must have the appropriate rights to read users. |
+| `-team` |  | The Mattermost Team name that the cleanup should be applied to |
 | `-age` |  | Age (in days) for an inactive user to be deactivated. [default: 180] |
 | `-dry-run` |  | If present, the list of users to be deactivated will be displayed on the screen, but no action will be taken. |
 | `-debug` | `MM_DEBUG` | If present, will run in debug mode, delivering additional output to stdout |

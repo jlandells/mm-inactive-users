@@ -21,3 +21,4 @@ mm-inactive-users_*
 
 # Go workspace file
 go.work
+.vscode/launch.json

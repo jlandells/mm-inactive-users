@@ -145,6 +145,14 @@ func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		ListTeamsAndExit(mattermostCon)
+	}
+	if resp.StatusCode != 200 {
+		LogMessage(errorLevel, "Call to Get Teams failed!  Returned HTTP status: "+resp.Status)
+		os.Exit(4)
+	}
+
 	// Extract the body of the message
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -173,6 +181,55 @@ func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 	}
 
 	return teamID, nil
+}
+
+// ListTeamsAndExit lists all available teams in Mattermost then exists.
+// It's intended to be called if the supplied team isn't found
+func ListTeamsAndExit(mattermostCon mmConnection) {
+	DebugPrint("In ListTeamsAndExit")
+
+	url := fmt.Sprintf("%s://%s:%s/api/v4/teams", mattermostCon.mmScheme, mattermostCon.mmURL, mattermostCon.mmPort)
+	DebugPrint("Teams lookup URL: " + url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		LogMessage(errorLevel, "Error preparing GET")
+		os.Exit(10)
+	}
+	// Add the bearer token as a header
+	req.Header.Add("Authorization", "Bearer "+mattermostCon.mmToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		LogMessage(errorLevel, "Failed to query Mattermost")
+		os.Exit(11)
+	}
+	defer resp.Body.Close()
+
+	// Extract the body of the message
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		LogMessage(errorLevel, "Unable to extract body data from Mattermost response to Get Teams")
+		os.Exit(12)
+	}
+
+	// Check if the response body is empty (indicating no more items)
+	if string(body) == "[]" {
+		LogMessage(errorLevel, "No Teams data returned from Mattermost!")
+		os.Exit(13)
+	}
+
+	// Parse the response to extract the teams
+	fmt.Printf("\n\nTeams available in Mattermost (internal name in brackets):\n\n")
+
+	_, _ = jsonparser.ArrayEach(body, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
+		displayName, _ := jsonparser.GetString(value, "display_name")
+		internalName, _ := jsonparser.GetString(value, "name")
+		fmt.Printf(" - %s (%s)\n", displayName, internalName)
+	})
+
+	fmt.Printf("\n\nPlease ensure that one of these teams is present in your command-line\n\n")
+	os.Exit(99)
 }
 
 // EpochToDate converts an Epoch time to a string representation of the date.

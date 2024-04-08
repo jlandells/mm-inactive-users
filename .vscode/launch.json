@@ -11,7 +11,16 @@
             "mode": "auto",
             "program": "${fileDirname}",
             "console": "integratedTerminal",
-            "args": ["-url=192.168.1.210", "-token=8joz87cs93rc9nxmg6bif4i1fh", "-team=sabinet", "-age=7", "-dry-run", "-debug"]
+            "args": ["-url=192.168.1.210", "-token=8joz87cs93rc9nxmg6bif4i1fh", "-team=sabinet", "-age=90", "-debug"]
+        },
+        {
+            "name": "Launch Package - Bad Team",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${fileDirname}",
+            "console": "integratedTerminal",
+            "args": ["-url=192.168.1.210", "-token=8joz87cs93rc9nxmg6bif4i1fh", "-team=foobar", "-age=90", "-debug"]
         }
     ]
 }
