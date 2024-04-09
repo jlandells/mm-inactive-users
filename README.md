@@ -40,6 +40,7 @@ Here's how to use the Mattermost Inactive User Cleaner:
 | `-age` |  | Age (in days) for an inactive user to be deactivated. [default: 180] |
 | `-dry-run` |  | If present, the list of users to be deactivated will be displayed on the screen, but no action will be taken. |
 | `-debug` | `MM_DEBUG` | If present, will run in debug mode, delivering additional output to stdout |
+| `-version` |   | If present, this flag will cause the application to print version version information and exit.  No processing will take place. |
 
 ## Contributing
 

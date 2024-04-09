@@ -19,6 +19,8 @@ import (
 	"golang.org/x/term"
 )
 
+var Version = "development" // Default value - overwritten during bild process
+
 var debugMode bool = false
 var dryRunMode bool = false
 
@@ -473,6 +475,7 @@ func main() {
 	var MaxAge int
 	var DryRunFlag bool
 	var DebugFlag bool
+	var VersionFlag bool
 
 	flag.StringVar(&MattermostURL, "url", "", "The URL of the Mattermost instance (without the HTTP scheme)")
 	flag.StringVar(&MattermostPort, "port", "", "The TCP port used by Mattermost. [Default: "+defaultPort+"]")
@@ -482,8 +485,14 @@ func main() {
 	flag.IntVar(&MaxAge, "age", defaultAge, "The number of days a user must have been inactive to be deactivated.  [Default: "+string(defaultAge)+"]")
 	flag.BoolVar(&DryRunFlag, "dry-run", false, "This tells the code to simply list the users to be deactivated, without making any changes.")
 	flag.BoolVar(&DebugFlag, "debug", false, "Enable debug output")
+	flag.BoolVar(&VersionFlag, "version", false, "Show version information and exit")
 
 	flag.Parse()
+
+	if VersionFlag {
+		fmt.Printf("\nmm-inactive-users - Version: %s\n\n", Version)
+		os.Exit(0)
+	}
 
 	// If information not supplied on the command line, check whether it's available as an envrionment variable
 	if MattermostURL == "" {
@@ -543,6 +552,8 @@ func main() {
 		mmScheme: MattermostScheme,
 		mmToken:  MattermostToken,
 	}
+
+	LogMessage(infoLevel, "Processing started - Version: "+Version)
 
 	err := processUsers(mattermostConenction, MattermostTeam, MaxAge, dryRunMode)
 
