@@ -482,7 +482,8 @@ func main() {
 	flag.StringVar(&MattermostScheme, "scheme", "", "The HTTP scheme to be used (http/https). [Default: "+defaultScheme+"]")
 	flag.StringVar(&MattermostToken, "token", "", "The auth token used to connect to Mattermost")
 	flag.StringVar(&MattermostTeam, "team", "", "*Required*.  The name of the Mattermost team")
-	flag.IntVar(&MaxAge, "age", defaultAge, "The number of days a user must have been inactive to be deactivated.  [Default: "+string(defaultAge)+"]")
+	MaxAgeDescription := fmt.Sprintf("The number of days a user must have been inactive to be deactivated.  [Default: %d]", defaultAge)
+	flag.IntVar(&MaxAge, "age", defaultAge, MaxAgeDescription)
 	flag.BoolVar(&DryRunFlag, "dry-run", false, "This tells the code to simply list the users to be deactivated, without making any changes.")
 	flag.BoolVar(&DebugFlag, "debug", false, "Enable debug output")
 	flag.BoolVar(&VersionFlag, "version", false, "Show version information and exit")
@@ -511,7 +512,13 @@ func main() {
 		DebugFlag = getEnvWithDefault("MM_DEBUG", debugMode).(bool)
 	}
 
-	DebugPrint("Parameters: MattermostURL=" + MattermostURL + " MattermostPort=" + MattermostPort + " MattermostScheme=" + MattermostScheme + " MattermostToken=" + MattermostToken + " MaxAge=" + string(MaxAge))
+	DebugMessage := fmt.Sprintf("Parameters: MattermostURL=%s, MattermostPort=%s, MattermostScheme=%s, MattermostToken=%s, MaxAge=%d",
+		MattermostURL,
+		MattermostPort,
+		MattermostScheme,
+		MattermostToken,
+		MaxAge)
+	DebugPrint(DebugMessage)
 	if DryRunFlag {
 		DebugPrint("Dry-run flag is set")
 	}
