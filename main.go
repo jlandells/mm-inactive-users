@@ -293,7 +293,12 @@ func callGetUsers(mattermostCon mmConnection, mmTeamID string, page int, usersMa
 		lastname, _ := jsonparser.GetString(value, "last_name")
 		lastActivity, _ := jsonparser.GetInt(value, "last_activity_at")
 		lastActivityAge := DaysAgo(lastActivity)
-		if lastActivityAge >= age {
+		deleteAt, _ := jsonparser.GetInt(value, "delete_at")
+		if deleteAt > 0 {
+			DebugPrint("Skipping user " + username + " - already disabled")
+		}
+		if lastActivityAge >= age && deleteAt == 0 {
+			DebugPrint("Found user: " + username + " for deactivation")
 			userFullname := fmt.Sprintf("%s %s", firstname, lastname)
 			usersMap[id] = User{
 				UserID:                id,
