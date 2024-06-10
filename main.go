@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -88,6 +86,7 @@ func getEnvWithDefault(key string, defaultValue interface{}) interface{} {
 	return value
 }
 
+// getTerminalHeight is a utility function used for pagination
 func getTerminalHeight() int {
 	fd := int(os.Stdout.Fd())
 	if term.IsTerminal(fd) {
@@ -99,6 +98,10 @@ func getTerminalHeight() int {
 	return defaultTerminalHeight
 }
 
+// promptForKeypress is a utility function that displays a message and waits for a keypress.
+// It takes 2 parameters:
+// prompt: a string to be displayed to alert the users what they need to do
+// allowedKeys: an array of strings for the keys that will be accepted.  Other keys will be ignored.
 func promptForKeypress(prompt string, allowedKeys []string) (string, error) {
 
 	DebugPrint("Waiting for keypress")
@@ -124,6 +127,10 @@ func promptForKeypress(prompt string, allowedKeys []string) (string, error) {
 	}
 }
 
+// getTeamID translates the Mattermost Team name into the internal Team ID, which is required for other API calls.
+// It takes 2 parameters:
+// mattermostCon: the Mattermost connection details
+// mmTeam: a string containing the name of the Mattermost Team
 func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 	DebugPrint("Retrieving Team ID for team: " + mmTeam)
 
@@ -161,20 +168,6 @@ func getTeamID(mattermostCon mmConnection, mmTeam string) (string, error) {
 		LogMessage(errorLevel, "Unable to extract body data from Mqattermost response")
 		return "", err
 	}
-
-	/* 	// Parse the response
-	   	var result map[string]interface{}
-	   	if err := json.Unmarshal(body, &result); err != nil {
-	   		LogMessage(errorLevel, "Failed to convert body data")
-	   		return "", err
-	   	}
-
-	   	// Convert the data to a string
-	   	mmTeamData, err := json.Marshal(result)
-	   	if err != nil {
-	   		LogMessage(errorLevel, "Unable to convert user data to string")
-	   		log.Fatal(err)
-	   	} */
 
 	teamID, err = jsonparser.GetString([]byte(body), "id")
 	if err != nil {
@@ -294,10 +287,13 @@ func callGetUsers(mattermostCon mmConnection, mmTeamID string, page int, usersMa
 		lastActivity, _ := jsonparser.GetInt(value, "last_activity_at")
 		lastActivityAge := DaysAgo(lastActivity)
 		deleteAt, _ := jsonparser.GetInt(value, "delete_at")
+		roles, _ := jsonparser.GetString(value, "roles")
 		if deleteAt > 0 {
 			DebugPrint("Skipping user " + username + " - already disabled")
 		}
-		if lastActivityAge >= age && deleteAt == 0 {
+		if strings.Contains(roles, "system_admin") {
+			LogMessage(infoLevel, "Skipping "+username+", as they are a system admin")
+		} else if lastActivityAge >= age && deleteAt == 0 {
 			DebugPrint("Found user: " + username + " for deactivation")
 			userFullname := fmt.Sprintf("%s %s", firstname, lastname)
 			usersMap[id] = User{
@@ -343,22 +339,29 @@ func printAllIdentifiedUsers(Users map[string]User) {
 	fmt.Printf("\nTotal users identified: %d\n\n", len(Users))
 }
 
-func deactivateUsers(mmCon mmConnection, users map[string]User) error {
-	DebugPrint("Deactivating users")
+// deactivateUsers is used to mark Mattermost users as inactive, or optionally delete them.
+// It takes 3 parameters:
+// - mmCon: the Mattermost conenction information
+// - users: a map containing the users to be deactivated/deleted
+// - hardDelete: a boolean value that determines if the users should be hard deleted.  The default is false (deactivate only).
+func deactivateUsers(mmCon mmConnection, users map[string]User, hardDelete bool) error {
 
-	// We'll be passing the same JSON body to every call
-	data := map[string]bool{"active": false}
-
-	// Marshal the data into a JSON byte slice
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		LogMessage(errorLevel, "Error marshaling JSON data for deactivation. Error: "+err.Error())
-		return err
+	if hardDelete {
+		DebugPrint("Hard deleting users")
+	} else {
+		DebugPrint("Deactivating users")
 	}
 
 	for _, user := range users {
-		url := fmt.Sprintf("%s://%s:%s/api/v4/users/%s/active", mmCon.mmScheme, mmCon.mmURL, mmCon.mmPort, user.UserID)
-		req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+		var url string
+		if hardDelete {
+			// Delete permanently
+			url = fmt.Sprintf("%s://%s:%s/api/v4/users/%s?permanent=true", mmCon.mmScheme, mmCon.mmURL, mmCon.mmPort, user.UserID)
+		} else {
+			// Mark inactive
+			url = fmt.Sprintf("%s://%s:%s/api/v4/users/%s", mmCon.mmScheme, mmCon.mmURL, mmCon.mmPort, user.UserID)
+		}
+		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			LogMessage(warningLevel, "Error preparing API call for user: "+user.Username)
 			continue
@@ -370,29 +373,23 @@ func deactivateUsers(mmCon mmConnection, users map[string]User) error {
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			LogMessage(warningLevel, "PUT request failed for user: "+user.Username)
+			LogMessage(warningLevel, "DELETE request failed for user: "+user.Username)
 			continue
 		}
 		defer resp.Body.Close()
 
-		/* 		body, err := ioutil.ReadAll(resp.Body)
-		   		if err != nil {
-		   			LogMessage(warningLevel, "Failed to process HTTP response for user: "+user.Username)
-		   			continue
-		   		}
-		*/
 		if resp.StatusCode != 200 {
-			LogMessage(warningLevel, "REST call returned: '"+resp.Status+"' when attempting to deactivate user: "+user.Username)
+			LogMessage(warningLevel, "REST call returned: '"+resp.Status+"' when attempting to deactivate/delete user: "+user.Username)
 			continue
 		}
 	}
 
-	LogMessage(infoLevel, "Deactivations complete")
+	LogMessage(infoLevel, "Deactivations/deletions complete")
 
 	return nil
 }
 
-func processUsers(mattermostCon mmConnection, mmTeam string, age int, dryrun bool) error {
+func processUsers(mattermostCon mmConnection, mmTeam string, age int, dryrun bool, hardDelete bool) error {
 
 	DebugPrint("Processing users")
 
@@ -450,7 +447,7 @@ func processUsers(mattermostCon mmConnection, mmTeam string, age int, dryrun boo
 			switch keypress {
 			case "Y":
 				LogMessage(infoLevel, "Deactivating users")
-				deactivateUsers(mattermostCon, candidateUsersMap)
+				deactivateUsers(mattermostCon, candidateUsersMap, hardDelete)
 				break loop
 
 			case "N":
@@ -478,6 +475,7 @@ func main() {
 	var MattermostToken string
 	var MattermostTeam string
 	var MaxAge int
+	var HardDeleteFlag bool
 	var DryRunFlag bool
 	var DebugFlag bool
 	var VersionFlag bool
@@ -489,6 +487,7 @@ func main() {
 	flag.StringVar(&MattermostTeam, "team", "", "*Required*.  The name of the Mattermost team")
 	MaxAgeDescription := fmt.Sprintf("The number of days a user must have been inactive to be deactivated.  [Default: %d]", defaultAge)
 	flag.IntVar(&MaxAge, "age", defaultAge, MaxAgeDescription)
+	flag.BoolVar(&HardDeleteFlag, "hard-delete", false, "Hard delete users, rather than just marking them as inactive.")
 	flag.BoolVar(&DryRunFlag, "dry-run", false, "This tells the code to simply list the users to be deactivated, without making any changes.")
 	flag.BoolVar(&DebugFlag, "debug", false, "Enable debug output")
 	flag.BoolVar(&VersionFlag, "version", false, "Show version information and exit")
@@ -567,7 +566,7 @@ func main() {
 
 	LogMessage(infoLevel, "Processing started - Version: "+Version)
 
-	err := processUsers(mattermostConenction, MattermostTeam, MaxAge, dryRunMode)
+	err := processUsers(mattermostConenction, MattermostTeam, MaxAge, dryRunMode, HardDeleteFlag)
 
 	if err != nil {
 		LogMessage(errorLevel, "Processing failed.  Error: "+err.Error())

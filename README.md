@@ -39,8 +39,12 @@ Here's how to use the Mattermost Inactive User Cleaner:
 | `-team` |  | The Mattermost Team name that the cleanup should be applied to |
 | `-age` |  | Age (in days) for an inactive user to be deactivated. [default: 180] |
 | `-dry-run` |  | If present, the list of users to be deactivated will be displayed on the screen, but no action will be taken. |
+| `-hard-delete` |   | If present, the users will be deleted from the database, rather than simply deactivating them. |
 | `-debug` | `MM_DEBUG` | If present, will run in debug mode, delivering additional output to stdout |
 | `-version` |   | If present, this flag will cause the application to print version version information and exit.  No processing will take place. |
+
+> [!IMPORTANT]
+> In order to use the `-hard-delete` flag, `ServiceSettings.EnableAPIUserDeletion` must be set to `true` in the server's configuration.
 
 ## Contributing
 
